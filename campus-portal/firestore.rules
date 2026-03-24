@@ -1,0 +1,76 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to extract domain from email
+    function getEmailDomain(email) {
+      return email.split('@')[1];
+    }
+
+    // Helper function to check if user has admin role
+    function isAdmin() {
+      return request.auth.token.email != null && getEmailDomain(request.auth.token.email) == 'admin.com';
+    }
+
+    // Helper function to check if user has teacher role
+    function isTeacher() {
+      return request.auth.token.email != null && getEmailDomain(request.auth.token.email) == 'teacher.com';
+    }
+
+    // Helper function to check if user has student role
+    function isStudent() {
+      return request.auth.token.email != null && getEmailDomain(request.auth.token.email) == 'student.com';
+    }
+
+    // ============================================================
+    // ADMINS COLLECTION - Full read/write for admins only
+    // ============================================================
+    match /artifacts/{projectId}/public/data/admins/{adminId} {
+      allow read: if request.auth != null && isAdmin();
+      allow create, update: if request.auth != null && isAdmin() && request.resource.data.email != null;
+      allow delete: if request.auth != null && isAdmin();
+    }
+
+    // ============================================================
+    // TEACHERS COLLECTION - Teachers can read all, write own + attendance
+    // ============================================================
+    match /artifacts/{projectId}/public/data/teachers/{teacherId} {
+      allow read: if request.auth != null && (isAdmin() || isTeacher());
+      allow create, update: if request.auth != null && isAdmin();
+      allow delete: if request.auth != null && isAdmin();
+
+      // Teachers can update attendance for their records
+      match /attendance/{attendanceId} {
+        allow read: if request.auth != null && (isAdmin() || isTeacher() || isStudent());
+        allow create, update: if request.auth != null && (isAdmin() || isTeacher());
+      }
+    }
+
+    // ============================================================
+    // STUDENTS COLLECTION - Students can read own, teachers/admins can read all
+    // ============================================================
+    match /artifacts/{projectId}/public/data/students/{studentId} {
+      allow read: if request.auth != null && (isAdmin() || isTeacher() || (isStudent()));
+      allow create, update: if request.auth != null && isAdmin();
+      allow delete: if request.auth != null && isAdmin();
+
+      // Students can view own attendance
+      match /attendance/{attendanceId} {
+        allow read: if request.auth != null && (isAdmin() || isTeacher() || isStudent());
+        allow create, update: if request.auth != null && (isAdmin() || isTeacher());
+      }
+
+      // Students can view own results
+      match /results/{resultId} {
+        allow read: if request.auth != null && (isAdmin() || isTeacher() || isStudent());
+      }
+    }
+
+    // ============================================================
+    // DEFAULT DENY - Protect all other paths
+    // ============================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
